@@ -22,11 +22,12 @@ const CommentUrl = "mailto:admin@wrc.sa.gov.au";
 
 declare const process: any;
 
-// All valid street names, street suffixes and suburb names.
+// All valid street names, street suffixes, suburb names and hundred names.
 
 let StreetNames = null;
 let StreetSuffixes = null;
 let SuburbNames = null;
+let HundredNames = null;
 
 // Sets up an sqlite database.
 
@@ -533,17 +534,19 @@ function parseApplicationElements(elements: Element[], startElement: Element, in
         //     EDGARüEASTüEAST STREETüTERRACE  <-- missing "ü" character due to truncation
         //     SOUTH WESTüSOUTH WEST TERRACEü  <-- missing "ü" character due to truncation
         //     ChristopherüChristopher Street  <-- missing "ü" character due to truncation
+        //     PORT WAKEFIELDüPORT WAKEFIELD   <-- missing "ü" character due to truncation
         //     NORTH WESTüNORTH WESTüNORTH WE  <-- missing "ü" characters due to truncation
         //     RAILWAYüSCHOOL TCE SOUTHüTERRA  <-- ambiguous space delimiter
         //     BLYTHüWHITE WELL HDüROAD        <-- ambiguous space delimiter
         //     Kybunga TopüKybunga Top RoadüR  <-- ambiguous space delimiter
         //     SOUTHüSOUTH TERRACE EASTüTERRA  <-- ambiguous space delimiter
 
-        // Artificially increase the street name tokens to twice the length of the house number
-        // tokens (this then simplifies the following processing).
+        // Artificially increase the street name tokens to twice the length (minus one) of the
+        // house number tokens (this then simplifies the following processing).  The "minus one"
+        // is because the middle token will be split in two later.
 
         let streetNameTokens = streetName.split("ü");
-        while (streetNameTokens.length < 2 * houseNumberTokens.length)
+        while (streetNameTokens.length < 2 * houseNumberTokens.length - 1)
             streetNameTokens.push("");
 
         // Consider the following street name (however, realistically this would be truncated at
@@ -614,6 +617,49 @@ function parseApplicationElements(elements: Element[], startElement: Element, in
                             candidate.streetNames.push({ houseNumber: houseNumber, streetName: streetName, threshold: Number.MAX_VALUE });
                     }
                 }
+            }
+        }
+
+        // Where there are multiple candidates mark down the candidates that end in " HD" (and so
+        // appear to represent a hundred name) but do not actually contain a valid hundred name.
+        // For example, the valid address "292 Lake View Road" in "Candidate 1" is the better
+        // choice in the following because the hundred name in "Candidate 0" is invalid.
+        //
+        //     BARUNGAüLake View HDüRoad
+        //
+        // Candidate 0: [BARUNGA] [Lake]   [View HD] [Road]
+        //             └───╴Group 1╶────┘ └───╴Group 2╶────┘
+        //     Resulting street names:
+        //         BARUNGA View HD  <-- invalid hundred name
+        //         Lake Road        <-- valid street name
+        //
+        // Candidate 1: [BARUNGA] [Lake View]   [HD] [Road]
+        //             └──────╴Group 1╶──────┘ └─╴Group 2╶─┘
+        //     Resulting street names:
+        //         BARUNGA HD      <-- valid hundred name 
+        //         Lake View Road  <-- valid street name
+
+
+        
+        // Choose an address that:
+        //
+        // 1. Has a house number
+        // 2. Has a threshold of 0, 1 or 2 (but prefer 0)
+        // 3. Does not end " HD"
+        //
+        // If an address exists in both candidates then ignore the candidate that has an invalid
+        // hundred name (as explained above)
+
+
+
+        // The first and last street names are most likely to be incorrect.
+
+        for (let index = 0; index < candidates.length; index++) {
+            console.log(`Candidate ${index}:`);
+            let streetNames = candidates[index].streetNames;
+            for (let streetNameIndex = 0; streetNameIndex < streetNames.length; streetNameIndex++) {
+                let streetName = streetNames[streetNameIndex];
+                console.log(`    Index ${streetNameIndex} (threshold ${streetName.threshold}): ${streetName.houseNumber} ${streetName.streetName}`);
             }
         }
 
@@ -813,7 +859,8 @@ async function main() {
 
     let database = await initializeDatabase();
 
-    // Read the files containing all possible street names, street suffixes and suburb names.
+    // Read the files containing all possible street names, street suffixes, suburb names and
+    // hundred names.
 
     StreetNames = {};
     for (let line of fs.readFileSync("streetnames.txt").toString().replace(/\r/g, "").trim().split("\n")) {
@@ -834,6 +881,10 @@ async function main() {
         let suburbTokens = line.toUpperCase().split(",");
         SuburbNames[suburbTokens[0].trim()] = suburbTokens[1].trim();
     }
+
+    HundredNames = [];
+    for (let line of fs.readFileSync("hundrednames.txt").toString().replace(/\r/g, "").trim().split("\n"))
+        HundredNames.push(line.trim().toUpperCase());
 
     // Read the main page of development applications.
 
@@ -869,14 +920,15 @@ async function main() {
     // at once because this may use too much memory, resulting in morph.io terminating the current
     // process).
 
-    let selectedPdfUrls: string[] = [];
-    selectedPdfUrls.push(pdfUrls.shift());
-    if (pdfUrls.length > 0)
-        selectedPdfUrls.push(pdfUrls[getRandom(0, pdfUrls.length)]);
-    if (getRandom(0, 2) === 0)
-        selectedPdfUrls.reverse();
+    // let selectedPdfUrls: string[] = [];
+    // selectedPdfUrls.push(pdfUrls.shift());
+    // if (pdfUrls.length > 0)
+    //     selectedPdfUrls.push(pdfUrls[getRandom(0, pdfUrls.length)]);
+    // if (getRandom(0, 2) === 0)
+    //     selectedPdfUrls.reverse();
 
-    for (let pdfUrl of selectedPdfUrls) {
+    // for (let pdfUrl of selectedPdfUrls) {
+    for (let pdfUrl of pdfUrls) {
         console.log(`Parsing document: ${pdfUrl}`);
         let developmentApplications = await parsePdf(pdfUrl);
         console.log(`Parsed ${developmentApplications.length} development application(s) from document: ${pdfUrl}`);
