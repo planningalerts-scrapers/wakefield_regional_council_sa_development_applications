@@ -545,6 +545,8 @@ function parseApplicationElements(elements: Element[], startElement: Element, in
         // house number tokens (this then simplifies the following processing).  The "minus one"
         // is because the middle token will be split in two later.
 
+console.log(`    Street Name: ${streetName}`);
+
         let streetNameTokens = streetName.split("ü");
         while (streetNameTokens.length < 2 * houseNumberTokens.length - 1)
             streetNameTokens.push("");
@@ -583,12 +585,13 @@ function parseApplicationElements(elements: Element[], startElement: Element, in
         for (let index = 1; index < ambiguousTokens.length; index++) {
             let group1 = [ ...streetNameTokens.slice(0, middleTokenIndex), ambiguousTokens.slice(0, index).join(" ")];
             let group2 = [ ambiguousTokens.slice(index).join(" "), ...streetNameTokens.slice(middleTokenIndex + 1)];
-            candidates.push({ group1: group1, group2: group2, streetNames: [] });
+            candidates.push({ group1: group1, group2: group2, hasInvalidHundredName: false });
         }
 
         // Full street names (with suffixes) can now be constructed for each candidate (by joining
         // together corresponding tokens from each group of tokens).
 
+        let addresses = [];
         for (let candidate of candidates) {
             for (let index = 0; index < houseNumberTokens.length; index++) {
                 // Expand street suffixes such as "Tce" to "TERRACE".
@@ -597,33 +600,50 @@ function parseApplicationElements(elements: Element[], startElement: Element, in
                     .map(token => (StreetSuffixes[token.toUpperCase()] === undefined) ? token : StreetSuffixes[token.toUpperCase()])
                     .join(" ");
 
-                // Choose the best matching street name (from the known street names).
+                // Construct the full street name (including the street suffix).
 
                 let houseNumber = houseNumberTokens[index];
                 let streetName = (candidate.group1[index] + " " + streetSuffix).trim().replace(/\s\s+/g, " ");
+                if (streetName === "") {
+                    console.log(`    Ignoring blank street name.`);
+                    continue;
+                }
+
+                // Check whether the street name is actually a hundred name such as "BARUNGA HD".
+
+                if (streetName.endsWith(" HD")) { // very likely a hundred name
+                    let hundredNameMatch = didYouMean(streetName.slice(0, -3), HundredNames, { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 0, trimSpaces: true });
+                    if (hundredNameMatch === null)
+                        candidate.hasInvalidHundredName = true;  // remember that there is an invalid hundred name (for example, "BARUNGA View HD")
+                    console.log(`    Ignoring hundred name: ${streetName}`);
+                    continue;
+                }
+
+                // Choose the best matching street name (from the known street names).
 
                 let streetNameMatch = didYouMean(streetName, Object.keys(StreetNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 0, trimSpaces: true });
                 if (streetNameMatch !== null)
-                    candidate.streetNames.push({ houseNumber: houseNumber, streetName: streetName, threshold: 0 });
+                    addresses.push({ houseNumber: houseNumber, streetName: streetName, threshold: 0, candidate: candidate });
                 else {
                     streetNameMatch = didYouMean(streetName, Object.keys(StreetNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 1, trimSpaces: true });
                     if (streetNameMatch !== null)
-                        candidate.streetNames.push({ houseNumber: houseNumber, streetName: streetNameMatch, threshold: 1 });
+                        addresses.push({ houseNumber: houseNumber, streetName: streetNameMatch, threshold: 1, candidate: candidate });
                     else {
                         streetNameMatch = didYouMean(streetName, Object.keys(StreetNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 2, trimSpaces: true });
                         if (streetNameMatch !== null)
-                            candidate.streetNames.push({ houseNumber: houseNumber, streetName: streetNameMatch, threshold: 2 });
+                            addresses.push({ houseNumber: houseNumber, streetName: streetNameMatch, threshold: 2, candidate: candidate });
                         else
-                            candidate.streetNames.push({ houseNumber: houseNumber, streetName: streetName, threshold: Number.MAX_VALUE });
+                            addresses.push({ houseNumber: houseNumber, streetName: streetName, threshold: Number.MAX_VALUE, candidate: candidate });  // unrecognised street name
                     }
                 }
             }
         }
 
-        // Where there are multiple candidates mark down the candidates that end in " HD" (and so
-        // appear to represent a hundred name) but do not actually contain a valid hundred name.
-        // For example, the valid address "292 Lake View Road" in "Candidate 1" is the better
-        // choice in the following because the hundred name in "Candidate 0" is invalid.
+        // Where there are multiple candidates mark down the candidates that contain street names
+        // ending in " HD" and so likely represent a hundred name, but do not actually contain a
+        // valid hundred name.  For example, the valid street name "Lake View Road" in "Candidate 1"
+        // is the better choice in the following because the hundred name "BARUNGA View HD" in
+        // "Candidate 0" is invalid.
         //
         //     BARUNGAüLake View HDüRoad
         //
@@ -638,8 +658,6 @@ function parseApplicationElements(elements: Element[], startElement: Element, in
         //     Resulting street names:
         //         BARUNGA HD      <-- valid hundred name 
         //         Lake View Road  <-- valid street name
-
-
         
         // Choose an address that:
         //
@@ -648,19 +666,42 @@ function parseApplicationElements(elements: Element[], startElement: Element, in
         // 3. Does not end " HD"
         //
         // If an address exists in both candidates then ignore the candidate that has an invalid
-        // hundred name (as explained above)
+        // hundred name (as explained above).
 
+        function addressComparer(a, b) {
+            // As long as there are one or two spelling errors then prefer the address with a
+            // house number (even if it has more spelling errors).
 
-
-        // The first and last street names are most likely to be incorrect.
-
-        for (let index = 0; index < candidates.length; index++) {
-            console.log(`Candidate ${index}:`);
-            let streetNames = candidates[index].streetNames;
-            for (let streetNameIndex = 0; streetNameIndex < streetNames.length; streetNameIndex++) {
-                let streetName = streetNames[streetNameIndex];
-                console.log(`    Index ${streetNameIndex} (threshold ${streetName.threshold}): ${streetName.houseNumber} ${streetName.streetName}`);
+            if (a.threshold <= 2 && b.threshold <= 2) {
+                if (a.houseNumber === "" && b.houseNumber !== "")
+                    return 1;
+                else if (a.houseNumber !== "" && b.houseNumber === "")
+                    return -1;
             }
+
+            // For larger numbers of spelling errors prefer addresses with fewer spelling errors.
+
+            if (a.threshold > b.threshold)
+                return 1;
+            else if (a.threshold < b.threshold)
+                return -1;
+
+            if (a.houseNumber === "" && b.houseNumber !== "")
+                return 1;
+            else if (a.houseNumber !== "" && b.houseNumber === "")
+                return -1;
+
+            if (a.candidate.hasInvalidHundredName && !b.candidate.hasInvalidHundredName)
+                return 1;
+            else if (!a.candidate.hasInvalidHundredName && b.candidate.hasInvalidHundredName)
+                return -1;
+        }
+
+        addresses.sort(addressComparer);
+
+        for (let index = 0; index < addresses.length; index++) {
+            let address = addresses[index];
+            console.log(`    ${index == 0 ? "-->" : "   "} ${address.houseNumber} ${address.streetName} [candidate.hasInvalidHundredName=${address.candidate.hasInvalidHundredName}, threshold=${address.threshold}]`);
         }
 
         // let streetName1 = undefined;
