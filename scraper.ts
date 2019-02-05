@@ -511,11 +511,14 @@ function parseApplicationElements(elements: Element[], startElement: Element, in
 
         let houseNumberTokens = houseNumber.split("ü");
 
-        // The street name may have the same number of "ü" characters as the house number in
-        // which case it is assumed the "ü" character delimits multiple street names (this seems
-        // to be a very rare case).  More often, however, the street name will have twice as many
-        // "ü" characters as the house number.  In this case the street names appear each broken
-        // in two and joined into groups.
+        // The street name will have twice as many "ü" characters as the house number.  Each street
+        // name is broken in two and the resulting strings are joined into two groups (delimited
+        // by "ü" within the groups).  A single space is used to join the two groups together.
+        //
+        // For example, the street names "WALLACE STREET" and "MAY TERRACE" are broken in two as
+        // "WALLACE" and "STREET"; and "MAY" and "TERRACE".  And then joined back together into
+        // two groups, "WALLACEüMAY" and "STREETüTERRACE".  Those two groups are then concatenated
+        // together using a single intervening space to form "WALLACEüMAY STREETüTERRACE".
         //
         // Unfortunately, the street name is truncated at 30 characters so some of the "ü"
         // characters may be missing.  And, also note, that unfortunately there is an ambiguity
@@ -544,8 +547,6 @@ function parseApplicationElements(elements: Element[], startElement: Element, in
         // Artificially increase the street name tokens to twice the length (minus one) of the
         // house number tokens (this then simplifies the following processing).  The "minus one"
         // is because the middle token will be split in two later.
-
-console.log(`    Street Name: ${streetName}`);
 
         let streetNameTokens = streetName.split("ü");
         while (streetNameTokens.length < 2 * houseNumberTokens.length - 1)
@@ -604,10 +605,8 @@ console.log(`    Street Name: ${streetName}`);
 
                 let houseNumber = houseNumberTokens[index];
                 let streetName = (candidate.group1[index] + " " + streetSuffix).trim().replace(/\s\s+/g, " ");
-                if (streetName === "") {
-                    console.log(`    Ignoring blank street name.`);
-                    continue;
-                }
+                if (streetName === "")
+                    continue;  // ignore blank street names
 
                 // Check whether the street name is actually a hundred name such as "BARUNGA HD".
 
@@ -615,8 +614,7 @@ console.log(`    Street Name: ${streetName}`);
                     let hundredNameMatch = didYouMean(streetName.slice(0, -3), HundredNames, { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 0, trimSpaces: true });
                     if (hundredNameMatch === null)
                         candidate.hasInvalidHundredName = true;  // remember that there is an invalid hundred name (for example, "BARUNGA View HD")
-                    console.log(`    Ignoring hundred name: ${streetName}`);
-                    continue;
+                    continue;  // ignore all hundred names names
                 }
 
                 // Choose the best matching street name (from the known street names).
@@ -641,9 +639,9 @@ console.log(`    Street Name: ${streetName}`);
 
         // Where there are multiple candidates mark down the candidates that contain street names
         // ending in " HD" and so likely represent a hundred name, but do not actually contain a
-        // valid hundred name.  For example, the valid street name "Lake View Road" in "Candidate 1"
+        // valid hundred name.  For example, the valid street name "Lake View Road" in candidate 1
         // is the better choice in the following because the hundred name "BARUNGA View HD" in
-        // "Candidate 0" is invalid.
+        // candidate 0 is invalid.
         //
         //     BARUNGAüLake View HDüRoad
         //
@@ -659,15 +657,13 @@ console.log(`    Street Name: ${streetName}`);
         //         BARUNGA HD      <-- valid hundred name 
         //         Lake View Road  <-- valid street name
         
-        // Choose an address that:
-        //
-        // 1. Has a house number
-        // 2. Has a threshold of 0, 1 or 2 (but prefer 0)
-        // 3. Does not end " HD"
-        //
-        // If an address exists in both candidates then ignore the candidate that has an invalid
-        // hundred name (as explained above).
-
+        // Sort the addresses so that addresses with a house number and fewer spelling errors
+        // appear at the start of the array.  Also avoid street names from a candidate where
+        // that candidate contains an invalid hundred name (because this often means that the
+        // wrong delimiting space has been chosen for that candidate, as in the above example,
+        // where candidate 0 contains the invalid hundred name, "BARUNGA View HD", and so likely
+        // the other address in that candidate is also wrong, namely, "Lake Road").
+        
         function addressComparer(a, b) {
             // As long as there are one or two spelling errors then prefer the address with a
             // house number (even if it has more spelling errors).
@@ -691,6 +687,9 @@ console.log(`    Street Name: ${streetName}`);
             else if (a.houseNumber !== "" && b.houseNumber === "")
                 return -1;
 
+            // All other things being equal (as tested above), avoid addresses belonging to a
+            // candidate that has an invalid hundred name.
+
             if (a.candidate.hasInvalidHundredName && !b.candidate.hasInvalidHundredName)
                 return 1;
             else if (!a.candidate.hasInvalidHundredName && b.candidate.hasInvalidHundredName)
@@ -699,69 +698,17 @@ console.log(`    Street Name: ${streetName}`);
 
         addresses.sort(addressComparer);
 
-        for (let index = 0; index < addresses.length; index++) {
-            let address = addresses[index];
-            console.log(`    ${index == 0 ? "-->" : "   "} ${address.houseNumber} ${address.streetName} [candidate.hasInvalidHundredName=${address.candidate.hasInvalidHundredName}, threshold=${address.threshold}]`);
+        if (addresses.length === 0) {
+            let elementSummary = elements.map(element => `[${element.text}]`).join("");
+            console.log(`Application number ${applicationNumber} will be ignored because an address was not parsed from the house number \"${houseNumber}\" and street name \"${streetName}\".  Elements: ${elementSummary}`);
+            return undefined;
         }
 
-        // let streetName1 = undefined;
-        // let streetName2 = undefined;
-        // let streetNameTokens = streetName.split("ü");
-        // if (streetNameTokens.length === 2) {
-        //     // If there is one "ü" character in the street then simply split on this to determine
-        //     // the street names.  For example, "SMITH STREETüRAILWAY TERRACE" is simply split into
-        //     // "SMITH STREET" and "RAILWAY TERRACE".
-        //
-        //     streetName1 = streetNameTokens[0];
-        //     streetName2 = streetNameTokens[1];
-        // } else if (streetNameTokens.length === 3) {
-        //     // If there are two "ü" characters then the splitting is more complicated if the
-        //     // middle token contains more than one space.
-        //
-        //     let streetName1Prefix = streetNameTokens[0];
-        //     let streetName2Suffix = streetNameTokens[2];
-        //     streetNameTokens = streetNameTokens[1].split(" ");
-        //     if (streetNameTokens.length === 2) {
-        //         // This is a simple case because the middle token contains only one space.  For
-        //         // example, "OLIVEüTUCKER PARADEüROAD" becomes "OLIVE PARADE" and "TUCKER ROAD".
-        //
-        //         streetName1 = streetName1Prefix + " " + streetNameTokens[1];
-        //         streetName2 = streetNameTokens[0] + " " + streetName2Suffix;
-        //     } else if (streetNameTokens.length === 3) {                
-        //         // This is a more complicated case because the middle token contains two spaces.
-        //         // For example, in "ROSSLYNüSWIFT WINGS ROADüSTREET" does "WINGS" belong with the
-        //         // first street or the second?  Either "ROSSLYN WINGS ROAD"/"SWIFT STREET" would
-        //         // result or "ROSSLYN ROAD"/"SWIFT WINGS STREET" would result.  Determining which
-        //         // is the reason for the "didyoumean" calls.
-        //
-        //         streetName1 = streetName1Prefix + " " + streetNameTokens[1] + " " + streetNameTokens[2];
-        //         streetName2 = streetNameTokens[0] + " " + streetName2Suffix;
-        //         let streetNameMatch1 = didYouMean(streetName1, Object.keys(StreetNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 2, trimSpaces: true });
-        //         let streetNameMatch2 = didYouMean(streetName2, Object.keys(StreetNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 2, trimSpaces: true });
-        //         if (streetNameMatch1 === null && streetNameMatch2 === null) {
-        //             streetName1 = streetName1Prefix + " " + streetNameTokens[2];
-        //             streetName2 = streetNameTokens[0] + " " + streetNameTokens[1] + " " + streetName2Suffix;
-        //         }
-        //     }
-        // }
-        //
-        // // Remove the "hundred" prefix that appears in some addresses.  Remove the " SA" suffix.
-        //
-        // let suburbName1 = suburbName.split("ü")[0].replace(/^HD /, "").replace(/ SA$/, "");
-        // let suburbName2 = suburbName.split("ü")[1].replace(/^HD /, "").replace(/ SA$/, "");
-        //
-        // // There are typically two addresses (for example, delineating a corner block).  Prefer
-        // // the address that has a house number.
-        //
-        // if (/[0-9]+[a-zA-Z]?/.test(houseNumber1))
-        //     address = houseNumber1 + " " + ((streetName1 === undefined) ? "" : streetName1) + ", " + (SuburbNames[suburbName1.toUpperCase()] || suburbName1);
-        // else if (/[0-9]+[a-zA-Z]?/.test(houseNumber2))
-        //     address = houseNumber2 + " " + ((streetName2 === undefined) ? "" : streetName2) + ", " + (SuburbNames[suburbName2.toUpperCase()] || suburbName2);
-        // else
-        //     address = houseNumber1 + " " + ((streetName1 === undefined) ? "" : streetName1) + ", " + (SuburbNames[suburbName1.toUpperCase()] || suburbName1);
+        suburbName = suburbName.replace(/^HD /, "").replace(/ SA$/, "");
+        address = `${addresses[0].houseNumber} ${addresses[0].streetName}, ${SuburbNames[suburbName.toUpperCase()] || suburbName}`.toUpperCase();
     } else {
         suburbName = suburbName.replace(/^HD /, "").replace(/ SA$/, "");
-        address = `${houseNumber} ${streetName}, ${SuburbNames[suburbName.toUpperCase()] || suburbName}`;
+        address = `${houseNumber} ${streetName}, ${SuburbNames[suburbName] || suburbName}`.toUpperCase();
     }
 
     address = address.trim().replace(/\s\s+/g, " ");
@@ -983,6 +930,8 @@ async function main() {
         console.log(`Inserting development applications into the database.`);
         for (let developmentApplication of developmentApplications)
             await insertRow(database, developmentApplication);
+
+        break;
     }
 }
 
