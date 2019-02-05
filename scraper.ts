@@ -457,15 +457,13 @@ function parseAddress(houseNumber: string, streetName: string, suburbName: strin
     // two groups, "WALLACEüMAY" and "STREETüTERRACE".  Those two groups are then concatenated
     // together using a single intervening space to form "WALLACEüMAY STREETüTERRACE".
     //
-    // Unfortunately, the street name is truncated at 30 characters so some of the "ü"
-    // characters may be missing.  And, also note, that unfortunately there is an ambiguity
-    // in some cases as to whether a space is a delimiter or is just a space that happens to
-    // occur within a street name or suffix (such as "Kybunga Top" in "Kybunga Top Road" or
-    // "TERRACE SOUTH" in "RAILWAY TERRACE SOUTH").
+    // Unfortunately, the street name is truncated at 30 characters so some of the "ü" characters
+    // may be missing.  Also note that there is an ambiguity in some cases as to whether a space
+    // is a delimiter or is just a space that happens to occur within a street name or suffix 
+    // (such as "Kybunga Top" in "Kybunga Top Road" or "TERRACE SOUTH" in "RAILWAY TERRACE SOUTH").
     //
     // For example,
     //
-    //     KENNETT STREETüKENNETT STREET   <-- two street names delimited by a "ü" character
     //     PHILLIPSüHARBISON ROADüROAD     <-- street names broken in two and joined into groups
     //     BarrüFrances StreetüTerrace     <-- street names broken in two and joined into groups
     //     GOYDERüGOYDERüMail HDüHDüRoad   <-- street names broken in two and joined into groups
@@ -475,15 +473,16 @@ function parseAddress(houseNumber: string, streetName: string, suburbName: strin
     //     SOUTH WESTüSOUTH WEST TERRACEü  <-- missing "ü" character due to truncation
     //     ChristopherüChristopher Street  <-- missing "ü" character due to truncation
     //     PORT WAKEFIELDüPORT WAKEFIELD   <-- missing "ü" character due to truncation
+    //     KENNETT STREETüKENNETT STREET   <-- missing "ü" character due to truncation (the missing text is probably " SOUTHüSOUTH")
     //     NORTH WESTüNORTH WESTüNORTH WE  <-- missing "ü" characters due to truncation
     //     RAILWAYüSCHOOL TCE SOUTHüTERRA  <-- ambiguous space delimiter
     //     BLYTHüWHITE WELL HDüROAD        <-- ambiguous space delimiter
     //     Kybunga TopüKybunga Top RoadüR  <-- ambiguous space delimiter
     //     SOUTHüSOUTH TERRACE EASTüTERRA  <-- ambiguous space delimiter
 
-    // Artificially increase the street name tokens to twice the length (minus one) of the
-    // house number tokens (this then simplifies the following processing).  The "minus one"
-    // is because the middle token will be split in two later.
+    // Artificially increase the street name tokens to twice the length (minus one) of the house
+    // number tokens (this then simplifies the following processing).  The "minus one" is because
+    // the middle token will be split in two later.
 
     let streetNameTokens = streetName.split("ü");
     while (streetNameTokens.length < 2 * houseNumberTokens.length - 1)
@@ -502,10 +501,10 @@ function parseAddress(houseNumber: string, streetName: string, suburbName: strin
     //     Token 3: Terrace East
     //     Token 4: Terrace
     //
-    // And from these tokens, the following candidate sets of tokens would be constructed
-    // (each broken into two groups).  Note that the middle token [Railway South Road] is
-    // broken into two tokens in different ways depending on which space is chosen as the
-    // delimiter for the groups: [Railway] and [South Road] or [Railway South] and [Road].
+    // And from these tokens, the following candidate sets of tokens would be constructed (each
+    // broken into two groups).  Note that the middle token [Railway South Road] is broken into
+    // two tokens in different ways depending on which space is chosen as the delimiter for the
+    // groups: [Railway] and [South Road] or [Railway South] and [Road].
     //
     //     Candidate 1: [Kybunga Top] [Smith] [Railway]   [South Road] [Terrace East] [Terrace]
     //                 └───────────╴Group 1╶───────────┘ └──────────────╴Group 2╶──────────────┘
@@ -937,15 +936,14 @@ async function main() {
     // at once because this may use too much memory, resulting in morph.io terminating the current
     // process).
 
-    // let selectedPdfUrls: string[] = [];
-    // selectedPdfUrls.push(pdfUrls.shift());
-    // if (pdfUrls.length > 0)
-    //     selectedPdfUrls.push(pdfUrls[getRandom(0, pdfUrls.length)]);
-    // if (getRandom(0, 2) === 0)
-    //     selectedPdfUrls.reverse();
+    let selectedPdfUrls: string[] = [];
+    selectedPdfUrls.push(pdfUrls.shift());
+    if (pdfUrls.length > 0)
+        selectedPdfUrls.push(pdfUrls[getRandom(0, pdfUrls.length)]);
+    if (getRandom(0, 2) === 0)
+        selectedPdfUrls.reverse();
 
-    // for (let pdfUrl of selectedPdfUrls) {
-    for (let pdfUrl of pdfUrls) {
+    for (let pdfUrl of selectedPdfUrls) {
         console.log(`Parsing document: ${pdfUrl}`);
         let developmentApplications = await parsePdf(pdfUrl);
         console.log(`Parsed ${developmentApplications.length} development application(s) from document: ${pdfUrl}`);
