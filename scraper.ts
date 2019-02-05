@@ -607,7 +607,8 @@ function addressComparer(a, b) {
             return -1;
     }
 
-    // For larger numbers of spelling errors prefer addresses with fewer spelling errors.
+    // For larger numbers of spelling errors prefer addresses with fewer spelling errors before
+    // considering the presence of a house number.
 
     if (a.threshold > b.threshold)
         return 1;
