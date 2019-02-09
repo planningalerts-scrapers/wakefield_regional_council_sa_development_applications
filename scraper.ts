@@ -396,10 +396,8 @@ function getDownText(elements: Element[], topText: string, rightText: string, bo
 // Constructs the full address string based on the specified address components.
 
 function formatAddress(houseNumber: string, streetName: string, suburbName: string) {
-    suburbName = suburbName.replace(/^HD /, "").replace(/ HD$/, "").replace(/ SA$/, "");
-    suburbName = SuburbNames[suburbName];
-    if (suburbName === undefined)
-        suburbName = "";
+    suburbName = suburbName.replace(/^HD /, "").replace(/ HD$/, "").replace(/ SA$/, "").trim();
+    suburbName = SuburbNames[suburbName] || suburbName;
     let separator = ((houseNumber !== "" || streetName !== "") && suburbName !== "") ? ", " : "";
     return `${houseNumber} ${streetName}${separator}${suburbName}`.trim().replace(/\s\s+/g, " ").toUpperCase();
 }
